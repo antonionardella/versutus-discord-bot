@@ -12,6 +12,7 @@ import requests
 import iota_client_production
 import pickle
 import datetime
+import pandas as pd
 
 
 from helpers import db_manager
@@ -19,6 +20,14 @@ from helpers.logger import logger
 
 with open("config.json") as file:
         config = json.load(file)
+
+def iota_unit_conversion(balance):
+    units = ['I', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi']
+    conversion_factor = [1, 1000, 1000000, 1000000000, 1000000000000, 1000000000000000]
+    for i, unit in enumerate(units):
+        if balance < conversion_factor[i]:
+            return "{} {}".format(round(balance / conversion_factor[i-1], 2), units[i-1])
+    return "{} {}".format(round(balance / conversion_factor[-1], 2), units[-1])
 
 async def get_iota_ledger_state():
     try:
@@ -45,7 +54,6 @@ async def get_bech32_address_format_iota(ed25519_address):
     logger.info("bech32_address")
     return bech32_address
 
-
 async def save_iota_rich_list():
     try:
         logger.info("Saving IOTA rich list")
@@ -58,7 +66,7 @@ async def save_iota_rich_list():
     except Exception as e:
         logger.info(traceback.format_exc())  
 
-async def prepare_iota_embed():
+async def prepare_iota_richlist_embed():
     logger.info("Preparing IOTA rich list embed")
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     richlist_from_db = await db_manager.get_iota_top_addresses(table_name = "iota_top_addresses")
@@ -96,10 +104,107 @@ async def prepare_iota_embed():
 
     logger.info("IOTA richlist embed created")
 
+async def prepare_iota_distribution_embed():
+    ledger_state = await db_manager.get_iota_ledger(table_name = "iota_hex_addresses")
+
+    # define the bin edges and labels
+    #bin_edges = [1000000, 10000000, 100000000, 1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000, 1000000000000000]
+    bin_edges = [999999, 9999999, 99999999, 999999999, 9999999999, 99999999999, 999999999999, 9999999999999, 99999999999999, 999999999999999]
+    labels = ['  1Mi-10Mi', ' 10Mi-100Mi', '100Mi-1Gi', '  1Gi-10Gi', ' 10Gi-100Gi', '100Gi-1Ti', '  1Ti-10Ti', ' 10Ti-100Ti', '100Ti-1Pi']
+
+    # load the data into a pandas DataFrame
+    ledger_df = pd.DataFrame(ledger_state, columns=["address", "balance"])
+
+    # add a new column 'range' to the DataFrame that assigns a label to each address based on its balance
+    ledger_df['Range'] = pd.cut(ledger_df['balance'], bins=bin_edges, labels=labels)
+
+    # group the DataFrame by the 'range' column and calculate the number of addresses, sum of balances, and percentage of total supply
+    summary_table = ledger_df.groupby('Range').agg({'address': 'count', 'balance': 'sum'}).rename(columns={'address': 'Addresses', 'balance': 'Sum balances'})
+    
+    # Add a new column 'Sum balances (original)' to store the original numeric values
+    summary_table['Sum balances (original)'] = summary_table['Sum balances']
+
+    # Convert the values in the 'Sum balances' column to the desired IOTA units using the iota_unit_conversion function
+    summary_table['Sum balances'] = summary_table['Sum balances (original)'].apply(iota_unit_conversion)    
+
+    # Calculate the '% Addresses' column using the original numeric values in the 'Addresses' column
+    summary_table['% Addresses'] = (summary_table['Addresses'] / summary_table['Addresses'].sum() * 100).round(2)
+    summary_table['% Addresses'] = summary_table['% Addresses'].apply(lambda x: "{}%".format(x))
+
+    # Calculate the '% Supply' column using the original numeric values in the 'Sum balances (original)' column
+    summary_table['% Supply'] = (summary_table['Sum balances (original)'] / summary_table['Sum balances (original)'].sum() * 100).round(2)
+    summary_table['% Supply'] = summary_table['% Supply'].apply(lambda x: "{}%".format(x))
+
+    # Remove the 'Sum balances (original)' column
+    summary_table.drop(columns=["Sum balances (original)"], inplace=True)
+
+    # print the summary table
+    print(summary_table)
+
+    # Prepare the embed message
+    logger.info("Preparing IOTA distribution embed")
+
+    try:
+        msg = "**IOTA token distribution**\n\n"
+        msg += "```"
+
+        # compute the maximum length of each column
+        # col_widths = [len(col) for col in ['Range', 'Addresses', 'Sum balances', '%Addresses', '%Supply']]
+        # for row in summary_table.itertuples():
+        #     # col_widths = [max(len(str(row[i+1])), width) for i in range(len(col_widths))]
+        #     col_widths = [max(len(str(row[i+1])), col_widths[i]) for i in range(len(col_widths))]
+
+        col_widths = [len(col) for col in [' 10Gi-100Gi', 'Addresses', 'Sum balances', '%Addresses', '%Supply']]
+        for row in summary_table.itertuples():
+            for i in range(len(col_widths)):
+                if i+1 < len(row):
+                    col_widths[i] = max(len(str(row[i+1])), col_widths[i])
+
+        # build the table header
+        header = "|"
+        for width in col_widths:
+            header += " " + "-"*width + " |"
+        msg += header + "\n"
+
+        # build the table header row
+        header_row = "|"
+        header_row += " " + "Range".ljust(col_widths[0]) + " |"
+        header_row += " " + "Addresses".ljust(col_widths[1]) + " |"
+        header_row += " " + "Sum balances".ljust(col_widths[2]) + " |"
+        header_row += " " + "%Addresses".ljust(col_widths[3]) + " |"
+        header_row += " " + "%Supply".ljust(col_widths[4]) + " |"
+        msg += header_row + "\n"
+        msg += header + "\n"
+
+        # build the table data rows
+        for row in summary_table.itertuples():
+            data_row = "|"
+            #data_row += " " + str(row[0]).rjust(col_widths[0]) + " |"
+            data_row += " " + str(row[0]).rjust(col_widths[0]) + " |"
+            data_row += " " + str(row[1]).rjust(col_widths[1]) + " |"
+            data_row += " " + str(row[2]).rjust(col_widths[2]) + " |"
+            data_row += " " + str(row[3]).rjust(col_widths[3]) + " |"
+            data_row += " " + str(row[4]).rjust(col_widths[4]) + " |"
+            msg += data_row + "\n"
+        msg += header + "\n"
+
+        msg += "```"
+        msg += "**Data from IOTA Ledger**"
+
+
+        with open('embed_iota_distribution.pkl', 'wb') as f:
+            pickle.dump(msg, f)
+
+
+    except Exception as e:
+        logger.info(traceback.format_exc())
+
+
 async def main():
-    await get_iota_ledger_state()
-    await save_iota_rich_list()
-    await prepare_iota_embed()
+   # await get_iota_ledger_state()
+   # await save_iota_rich_list()
+   # await prepare_iota_richlist_embed()
+    await prepare_iota_distribution_embed()
 
 
 if __name__ == "__main__":

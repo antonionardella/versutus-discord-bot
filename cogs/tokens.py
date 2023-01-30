@@ -30,15 +30,15 @@ class Tokens(commands.Cog, name="tokens"):
     
     @commands.cooldown(1, 3600, commands.BucketType.user)
     @commands.hybrid_command(
-        name="richlist-iota",
+        name="iota-richlist",
         description="Gives the Top 5 IOTA addresses",
     )
     # This will only allow non-blacklisted members to execute the command
     @checks.not_blacklisted()
 
-    async def richlist_iota(self, context: Context):
+    async def iota_richlist(self, context: Context):
         """
-        This command prints and embed with the top 5 IOTA addresses.
+        This command prints an embed with the top 5 IOTA addresses.
 
         :param context: The application command context.
         """
@@ -59,15 +59,15 @@ class Tokens(commands.Cog, name="tokens"):
     
     @commands.cooldown(1, 3600, commands.BucketType.user)
     @commands.hybrid_command(
-        name="richlist-shimmer",
+        name="shimmer-richlist",
         description="Gives the Top 5 Shimmer addresses",
     )
     # This will only allow non-blacklisted members to execute the command
     @checks.not_blacklisted()
 
-    async def richlist_shimmer(self, context: Context):
+    async def shimmer_richlist(self, context: Context):
         """
-        This command prints and embed with the top 5 Shimmer addresses.
+        This command prints an embed with the top 5 Shimmer addresses.
 
         :param context: The application command context.
         """
@@ -86,6 +86,36 @@ class Tokens(commands.Cog, name="tokens"):
 
         except Exception as e:
             print(traceback.format_exc())
+    @commands.cooldown(1, 3600, commands.BucketType.user)
+    @commands.hybrid_command(
+        name="iota-distribution",
+        description="Gives the IOTA distribution addresses",
+    )
+    # This will only allow non-blacklisted members to execute the command
+    @checks.not_blacklisted()
+
+    async def richlist_shimmer(self, context: Context):
+        """
+        This command prints an embed with the IOTA token distribution.
+
+        :param context: The application command context.
+        """
+        # Do your stuff here
+        global bot_reply_channel_id
+        # Do your stuff here
+
+        if context.message.channel.id != int(bot_reply_channel_id):
+            await context.send(f"This command can only be used in the <#{bot_reply_channel_id}> channel.")
+            return      
+        
+        try:
+            with open('embed_iota_distribution.pkl', 'rb') as f:
+                message = pickle.load(f)
+            await context.send(message)
+
+        except Exception as e:
+            print(traceback.format_exc())
+
 
 # And then we finally add the cog to the bot so that it can load, unload, reload and use it's content.
 async def setup(bot):
