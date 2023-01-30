@@ -201,9 +201,9 @@ async def prepare_iota_distribution_embed():
 
 
 async def main():
-   # await get_iota_ledger_state()
-   # await save_iota_rich_list()
-   # await prepare_iota_richlist_embed()
+    await get_iota_ledger_state()
+    await save_iota_rich_list()
+    await prepare_iota_richlist_embed()
     await prepare_iota_distribution_embed()
 
 
